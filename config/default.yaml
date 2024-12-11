@@ -25,9 +25,10 @@ model:
     cond_mode:        in-attn
     pretrained_params_path:      null
     pretrained_optim_path:       null
+    use_attr_cls:                False
 
 training:
-    device:           cuda:0
+    device:           cpu
     ckpt_dir:         ./ckpt/enc_dec_12L-16_bars-seqlen_1280
     trained_steps:    0
     max_epochs:       1000

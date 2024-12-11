@@ -6,43 +6,19 @@ import numpy as np
 
 from torch.utils.data import Dataset, DataLoader
 
-IDX_TO_KEY = {
-  0: 'A',
-  1: 'A#',
-  2: 'B',
-  3: 'C',
-  4: 'C#',
-  5: 'D',
-  6: 'D#',
-  7: 'E',
-  8: 'F',
-  9: 'F#',
-  10: 'G',
-  11: 'G#'
-}
-KEY_TO_IDX = {
-  v:k for k, v in IDX_TO_KEY.items()
-}
+def transpose_events(raw_events, n_keys):
+  transposed_raw_events = []
 
-def get_chord_tone(chord_event):
-  tone = chord_event['value'].split('_')[0]
-  return tone
-
-def transpose_chord(chord_event, n_keys):
-  if chord_event['value'] == 'N_N':
-    return chord_event
-
-  orig_tone = get_chord_tone(chord_event)
-  orig_tone_idx = KEY_TO_IDX[orig_tone]
-  new_tone_idx = (orig_tone_idx + 12 + n_keys) % 12
-  new_chord_value = chord_event['value'].replace(
-    '{}_'.format(orig_tone), '{}_'.format(IDX_TO_KEY[new_tone_idx])
-  )
-  new_chord_event = {'name': chord_event['name'], 'value': new_chord_value}
-  # print ('keys={}. {} --> {}'.format(n_keys, chord_event, new_chord_event))
-
-  return new_chord_event
-
+  for ev in raw_events:
+    if ev['name'] == 'Pitch':
+      transposed_raw_events.append(
+        {'name': ev['name'], 'value': int(ev['value']) + n_keys}
+      )
+    else:
+      transposed_raw_events.append(ev)
+  assert len(transposed_raw_events) == len(raw_events)
+  return transposed_raw_events
+  
 def check_extreme_pitch(raw_events):
   low, high = 128, 0
   for ev in raw_events:
@@ -51,24 +27,6 @@ def check_extreme_pitch(raw_events):
       high = max(high, int(ev['value']))
 
   return low, high
-
-def transpose_events(raw_events, n_keys):
-  transposed_raw_events = []
-
-  for ev in raw_events:
-    if ev['name'] == 'Note_Pitch':
-      transposed_raw_events.append(
-        {'name': ev['name'], 'value': ev['value'] + n_keys}
-      )
-    elif ev['name'] == 'Chord':
-      transposed_raw_events.append(
-        transpose_chord(ev, n_keys)
-      )
-    else:
-      transposed_raw_events.append(ev)
-
-  assert len(transposed_raw_events) == len(raw_events)
-  return transposed_raw_events
 
 def pickle_load(path):
   return pickle.load(open(path, 'rb'))
@@ -191,16 +149,7 @@ class REMIFullSongTransformerDataset(Dataset):
     return augmented_bar_events
 
   def get_attr_classes(self, piece, st_bar):
-    polyph_cls = pickle_load(os.path.join(self.data_dir, 'attr_cls/polyph', piece))[st_bar : st_bar + self.model_max_bars]
-    rfreq_cls = pickle_load(os.path.join(self.data_dir, 'attr_cls/rhythm', piece))[st_bar : st_bar + self.model_max_bars]
-
-    polyph_cls.extend([0 for _ in range(self.model_max_bars - len(polyph_cls))])
-    rfreq_cls.extend([0 for _ in range(self.model_max_bars - len(rfreq_cls))])
-
-    assert len(polyph_cls) == self.model_max_bars
-    assert len(rfreq_cls) == self.model_max_bars
-
-    return polyph_cls, rfreq_cls
+    pass
 
   def get_encoder_input_data(self, bar_positions, bar_events):
     assert len(bar_positions) == self.model_max_bars + 1

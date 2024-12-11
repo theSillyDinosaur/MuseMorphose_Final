@@ -80,8 +80,12 @@ def train_model(epoch, model, dloader, dloader_val, optim, sched):
     batch_inp_bar_pos = batch_samples['bar_pos'].to(device)
     batch_inp_lens = batch_samples['length']
     batch_padding_mask = batch_samples['enc_padding_mask'].to(device)
-    batch_rfreq_cls = batch_samples['rhymfreq_cls'].permute(1, 0).to(device)
-    batch_polyph_cls = batch_samples['polyph_cls'].permute(1, 0).to(device)
+    if model.use_attr_cls:
+      batch_rfreq_cls = batch_samples['rhymfreq_cls'].permute(1, 0).to(device)
+      batch_polyph_cls = batch_samples['polyph_cls'].permute(1, 0).to(device)
+    else:
+      batch_rfreq_cls = None
+      batch_polyph_cls = None
 
     global trained_steps
     trained_steps += 1
@@ -133,7 +137,7 @@ def train_model(epoch, model, dloader, dloader_val, optim, sched):
       )
 
     if not trained_steps % val_interval:
-      vallosses = validate(model, dloader_val)
+      vallosses = validate(model, dloader_val, use_attr_cls = model.use_attr_cls)
       with open(os.path.join(ckpt_dir, 'valloss.txt'), 'a') as f:
         f.write('[step {}] RC: {:.4f} | KL: {:.4f} | [val] | RC: {:.4f} | KL: {:.4f}\n'.format(
           trained_steps, 
@@ -223,7 +227,8 @@ if __name__ == "__main__":
     model_dec_seqlen=config['data']['dec_seqlen'], 
     model_max_bars=config['data']['max_bars'],
     pieces=pickle_load(config['data']['train_split']),
-    pad_to_same=True
+    pad_to_same=True,
+    use_attr_cls=config["model"]['use_attr_cls']
   )
   dset_val = REMIFullSongTransformerDataset(
     config['data']['data_dir'], config['data']['vocab_path'], 
@@ -232,7 +237,8 @@ if __name__ == "__main__":
     model_dec_seqlen=config['data']['dec_seqlen'], 
     model_max_bars=config['data']['max_bars'],
     pieces=pickle_load(config['data']['val_split']),
-    pad_to_same=True
+    pad_to_same=True,
+    use_attr_cls=config["model"]['use_attr_cls']
   )
   print ('[info]', '# training samples:', len(dset.pieces))
 
@@ -245,7 +251,7 @@ if __name__ == "__main__":
     mconf['dec_n_layer'], mconf['dec_n_head'], mconf['dec_d_model'], mconf['dec_d_ff'],
     mconf['d_latent'], mconf['d_embed'], dset.vocab_size,
     d_polyph_emb=mconf['d_polyph_emb'], d_rfreq_emb=mconf['d_rfreq_emb'],
-    cond_mode=mconf['cond_mode']
+    cond_mode=mconf['cond_mode'], use_attr_cls=mconf['use_attr_cls']
   ).to(device)
   if pretrained_params_path:
     model.load_state_dict( torch.load(pretrained_params_path) )
