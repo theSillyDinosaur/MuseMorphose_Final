@@ -12,7 +12,7 @@ def transpose_events(raw_events, n_keys):
   for ev in raw_events:
     if ev['name'] == 'Pitch':
       transposed_raw_events.append(
-        {'name': ev['name'], 'value': int(ev['value']) + n_keys}
+        {'name': ev['name'], 'value': min(max(int(ev['value']) + n_keys, 21), 108)}
       )
     else:
       transposed_raw_events.append(ev)
