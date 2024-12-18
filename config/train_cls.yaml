@@ -24,7 +24,7 @@ model:
     cond_mode:        in-attn
     pretrained_params_path:      null
     pretrained_optim_path:       null
-    use_attr_cls:                False
+    use_attr_cls:                True
 
 training:
     device:           cpu

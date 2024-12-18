@@ -149,7 +149,12 @@ class REMIFullSongTransformerDataset(Dataset):
     return augmented_bar_events
 
   def get_attr_classes(self, piece, st_bar):
-    pass
+
+    composer_cls_data = pickle_load(os.path.join(self.data_dir, 'attr_cls/composer.pkl'))
+    composer_cls = [composer_cls_data[int(piece[0:-4])]] * self.model_max_bars
+
+    assert len(composer_cls) == self.model_max_bars
+    return composer_cls
 
   def get_encoder_input_data(self, bar_positions, bar_events):
     assert len(bar_positions) == self.model_max_bars + 1
@@ -180,15 +185,13 @@ class REMIFullSongTransformerDataset(Dataset):
       bar_events = self.pitch_augment(bar_events)
 
     if self.use_attr_cls:
-      polyph_cls, rfreq_cls = self.get_attr_classes(os.path.basename(self.pieces[idx]), st_bar)
-      polyph_cls_expanded = np.zeros((self.model_dec_seqlen,), dtype=int)
-      rfreq_cls_expanded = np.zeros((self.model_dec_seqlen,), dtype=int)
+      composer_cls = self.get_attr_classes(os.path.basename(self.pieces[idx]), st_bar)
+      composer_cls_expand = np.zeros((self.model_dec_seqlen,), dtype=int)
       for i, (b_st, b_ed) in enumerate(zip(bar_pos[:-1], bar_pos[1:])):
-        polyph_cls_expanded[b_st:b_ed] = polyph_cls[i]
-        rfreq_cls_expanded[b_st:b_ed] = rfreq_cls[i]
+        composer_cls_expand[b_st:b_ed] = composer_cls[i]
     else:
-      polyph_cls, rfreq_cls = [0], [0]
-      polyph_cls_expanded, rfreq_cls_expanded = [0], [0]
+      composer_cls = [0]
+      composer_cls_expand = [0]
 
     bar_tokens = convert_event(bar_events, self.event2idx, to_ndarr=False)
     bar_pos = bar_pos.tolist() + [len(bar_tokens)]
@@ -212,10 +215,8 @@ class REMIFullSongTransformerDataset(Dataset):
       'enc_input': enc_inp,
       'dec_input': inp[:self.model_dec_seqlen],
       'dec_target': target[:self.model_dec_seqlen],
-      'polyph_cls': polyph_cls_expanded,
-      'rhymfreq_cls': rfreq_cls_expanded,
-      'polyph_cls_bar': np.array(polyph_cls),
-      'rhymfreq_cls_bar': np.array(rfreq_cls),
+      'composer_cls': composer_cls_expand,
+      'composer_cls_bar': np.array(composer_cls),
       'length': min(length, self.model_dec_seqlen),
       'enc_padding_mask': enc_padding_mask,
       'enc_length': enc_lens,
