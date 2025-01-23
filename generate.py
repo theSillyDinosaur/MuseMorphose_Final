@@ -274,7 +274,7 @@ def generate_on_latent_ctrl_vanilla_truncate_nonCLS(
 # change attribute classes
 ########################################
 def random_shift_attr_cls(n_samples, upper=4, lower=-3):
-  return np.random.randint(lower, upper, (n_samples,))
+  return [5, 0, 4]
 
 
 if __name__ == "__main__":
@@ -289,6 +289,7 @@ if __name__ == "__main__":
     use_attr_cls=config['model']['use_attr_cls']
   )
   pieces = random.sample(range(len(dset)), n_pieces)
+  pieces.sort()
   print ('[sampled pieces]', pieces)
   
   mconf = config['model']
@@ -344,16 +345,17 @@ if __name__ == "__main__":
                   sampling_var=config['generate']['latent_sampling_var']
                 )
     if mconf['use_attr_cls']:
-      p_cls_diff = random_shift_attr_cls(n_samples_per_piece)
-      r_cls_diff = random_shift_attr_cls(n_samples_per_piece)
+      p_new_cls = random_shift_attr_cls(n_samples_per_piece)
     else:
-      p_cls_diff = None
-      r_cls_diff = None
+      p_new_cls = None
+    print(p_new_cls)
 
     piece_entropies = []
     for samp in range(n_samples_per_piece):
       if mconf['use_attr_cls']:
-        p_composer_cls = (p_data['composer_cls_bar'] + p_cls_diff[samp]).clamp(0, 7).long()
+        shape = p_data['composer_cls_bar'].shape
+        print(shape)
+        p_composer_cls = (p_new_cls[samp]*torch.ones(shape)).long()
       else:
         p_composer_cls = None
 

@@ -2,7 +2,7 @@ import sys, os, time
 sys.path.append('./model')
 
 from model.musemorphose import MuseMorphose
-from dataloader import REMIFullSongTransformerDataset
+from dataloader import REMIFullSongTransformerDataset, CPFullSongTransformerDataset
 from torch.utils.data import DataLoader
 
 from utils import pickle_load
@@ -74,16 +74,28 @@ def train_model(epoch, model, dloader, dloader_val, optim, sched):
 
   for batch_idx, batch_samples in enumerate(dloader):
     model.zero_grad()
-    batch_enc_inp = batch_samples['enc_input'].permute(2, 0, 1).to(device)
-    batch_dec_inp = batch_samples['dec_input'].permute(1, 0).to(device)
-    batch_dec_tgt = batch_samples['dec_target'].permute(1, 0).to(device)
-    batch_inp_bar_pos = batch_samples['bar_pos'].to(device)
-    batch_inp_lens = batch_samples['length']
-    batch_padding_mask = batch_samples['enc_padding_mask'].to(device)
-    if model.use_attr_cls:
-      batch_composer_cls = batch_samples['composer_cls'].permute(1, 0).to(device)
+    if model.compound:
+      batch_enc_inp = batch_samples['enc_input'].permute(2, 0, 1, 3).to(device)
+      batch_dec_inp = batch_samples['dec_input'].permute(1, 0, 2).to(device)
+      batch_dec_tgt = batch_samples['dec_target'].permute(1, 0, 2).to(device)
+      batch_inp_bar_pos = batch_samples['bar_pos'].to(device)
+      batch_inp_lens = batch_samples['length']
+      batch_padding_mask = batch_samples['enc_padding_mask'].to(device)
+      if model.use_attr_cls:
+        batch_composer_cls = batch_samples['composer_cls'].permute(1, 0, 2).to(device)
+      else:
+        batch_composer_cls = None
     else:
-      batch_composer_cls = None
+      batch_enc_inp = batch_samples['enc_input'].permute(2, 0, 1).to(device)
+      batch_dec_inp = batch_samples['dec_input'].permute(1, 0).to(device)
+      batch_dec_tgt = batch_samples['dec_target'].permute(1, 0).to(device)
+      batch_inp_bar_pos = batch_samples['bar_pos'].to(device)
+      batch_inp_lens = batch_samples['length']
+      batch_padding_mask = batch_samples['enc_padding_mask'].to(device)
+      if model.use_attr_cls:
+        batch_composer_cls = batch_samples['composer_cls'].permute(1, 0).to(device)
+      else:
+        batch_composer_cls = None
 
     global trained_steps
     trained_steps += 1
@@ -216,7 +228,11 @@ def validate(model, dloader, n_rounds=8, use_attr_cls=True):
   return loss_rec, kl_loss_rec
 
 if __name__ == "__main__":
-  dset = REMIFullSongTransformerDataset(
+  if config['model']['compound']:
+    dataset = CPFullSongTransformerDataset
+  else:
+    dataset = REMIFullSongTransformerDataset
+  dset = dataset(
     config['data']['data_dir'], config['data']['vocab_path'], 
     do_augment=True, 
     model_enc_seqlen=config['data']['enc_seqlen'], 
@@ -226,7 +242,7 @@ if __name__ == "__main__":
     pad_to_same=True,
     use_attr_cls=config["model"]['use_attr_cls']
   )
-  dset_val = REMIFullSongTransformerDataset(
+  dset_val = dataset(
     config['data']['data_dir'], config['data']['vocab_path'], 
     do_augment=False, 
     model_enc_seqlen=config['data']['enc_seqlen'], 
@@ -238,8 +254,8 @@ if __name__ == "__main__":
   )
   print ('[info]', '# training samples:', len(dset.pieces))
 
-  dloader = DataLoader(dset, batch_size=config['data']['batch_size'], shuffle=True, num_workers=8)
-  dloader_val = DataLoader(dset_val, batch_size=config['data']['batch_size'], shuffle=True, num_workers=8)
+  dloader = DataLoader(dset, batch_size=config['data']['batch_size'], shuffle=True, num_workers=1)
+  dloader_val = DataLoader(dset_val, batch_size=config['data']['batch_size'], shuffle=True, num_workers=1)
 
   mconf = config['model']
   model = MuseMorphose(
@@ -247,7 +263,7 @@ if __name__ == "__main__":
     mconf['dec_n_layer'], mconf['dec_n_head'], mconf['dec_d_model'], mconf['dec_d_ff'],
     mconf['d_latent'], mconf['d_embed'], dset.vocab_size,
     d_composer_emb=mconf['d_composer_emb'],
-    cond_mode=mconf['cond_mode'], use_attr_cls=mconf['use_attr_cls']
+    cond_mode=mconf['cond_mode'], use_attr_cls=mconf['use_attr_cls'], compound=mconf['compound']
   ).to(device)
   if pretrained_params_path:
     model.load_state_dict( torch.load(pretrained_params_path) )

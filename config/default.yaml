@@ -25,6 +25,7 @@ model:
     pretrained_params_path:      null
     pretrained_optim_path:       null
     use_attr_cls:                False
+    compound:                    True
 
 training:
     device:           cpu

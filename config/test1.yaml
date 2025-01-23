@@ -26,6 +26,7 @@ model:
     pretrained_params_path:      null
     pretrained_optim_path:       null
     use_attr_cls:                False
+    compound:                    True
 
 training:
     device:           cuda
@@ -40,10 +41,10 @@ training:
     kl_cycle_steps:   5000
     kl_max_beta:      1.0
     free_bit_lambda:  0.25
-    constant_kl:      False
+    constant_kl:      Falgitse
     ckpt_interval:    50
     log_interval:     10
-    val_interval:     50
+    val_interval:     5000
 
 generate:
     temperature:                1.2

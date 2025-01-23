@@ -56,9 +56,10 @@ class MuseMorphose(nn.Module):
     enc_dropout=0.1, enc_activation='relu',
     dec_dropout=0.1, dec_activation='relu',
     d_composer_emb=32,
-    n_composer_cls=12,
+    n_composer_cls=13,
     is_training=True, use_attr_cls=True,
-    cond_mode='in-attn'
+    cond_mode='in-attn',
+    compound=False
   ):
     super(MuseMorphose, self).__init__()
     self.enc_n_layer = enc_n_layer
@@ -80,10 +81,30 @@ class MuseMorphose(nn.Module):
     self.is_training = is_training
 
     self.cond_mode = cond_mode
-    self.token_emb = TokenEmbedding(n_token, d_embed, enc_d_model)
+    self.compound = compound
+    if compound:
+      assert d_embed % 4 == 0 and enc_d_model % 4 == 0 and dec_d_model % 4 == 0 and len(n_token) == 5
+      self.partial_embs = [TokenEmbedding(n_token[i]+n_token[4], d_embed//4, enc_d_model//4) for i in range(4)]
+      def token_emb_func(inp_tokens):
+        a = []
+        a.append(self.partial_embs[0](inp_tokens[..., 0]))
+        a.append(self.partial_embs[1](inp_tokens[..., 1]))
+        a.append(self.partial_embs[2](inp_tokens[..., 2]))
+        a.append(self.partial_embs[3](inp_tokens[..., 3]))
+        return torch.cat([self.partial_embs[i](inp_tokens[..., i]) for i in range(4)], dim=-1)
+      self.token_emb = token_emb_func
+      self.partial_out_proj = [nn.Linear(dec_d_model // 4, n_token[i]+n_token[4]) for i in range(4)]
+      def dec_out_proj_func(latent):
+        split_latent = torch.split(latent, dec_d_model // 4, dim=-1)
+        dec_logits = [self.partial_out_proj[i](split_latent[i]) for i in range(4)]
+        return dec_logits
+      self.dec_out_proj = dec_out_proj_func
+        
+    else:
+      self.token_emb = TokenEmbedding(n_token, d_embed, enc_d_model)
+      self.dec_out_proj = nn.Linear(dec_d_model, n_token)
     self.d_embed = d_embed
     self.pe = PositionalEncoding(d_embed)
-    self.dec_out_proj = nn.Linear(dec_d_model, n_token)
     self.encoder = VAETransformerEncoder(
       enc_n_layer, enc_n_head, enc_d_model, enc_d_ff, d_vae_latent, enc_dropout, enc_activation
     )
@@ -191,10 +212,19 @@ class MuseMorphose(nn.Module):
     return mu, logvar, dec_logits
 
   def compute_loss(self, mu, logvar, beta, fb_lambda, dec_logits, dec_tgt):
-    recons_loss = F.cross_entropy(
-      dec_logits.view(-1, dec_logits.size(-1)), dec_tgt.contiguous().view(-1), 
-      ignore_index=self.n_token - 1, reduction='mean'
-    ).float()
+    if self.compound:
+      recons = [F.cross_entropy(
+        dec_logits[i].view(-1, dec_logits[i].size(-1)), dec_tgt[..., i].contiguous().view(-1), 
+        ignore_index=self.n_token[i] + self.n_token[4], reduction='mean'
+      ).float() for i in range(4)]
+      recons_loss = 0
+      for i in recons:
+        recons_loss += i
+    else:
+      recons_loss = F.cross_entropy(
+        dec_logits.view(-1, dec_logits.size(-1)), dec_tgt.contiguous().view(-1), 
+        ignore_index=self.n_token, reduction='mean'
+      ).float()
 
     kl_raw = -0.5 * (1 + logvar - mu ** 2 - logvar.exp()).mean(dim=0)
     kl_before_free_bits = kl_raw.mean()
