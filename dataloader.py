@@ -72,17 +72,23 @@ def compound_event(event_seq, bar_token_pos, to_ndarr = True):
         event_compounds.append(copy.deepcopy(cur))
         cur[1:4] = [-1, -1, -1]
     else:
-      if i in bar_token_pos:
+      if bar_token_pos != None and i in bar_token_pos:
         bar_pos.append(len(event_compounds))
       if event >= misc_range[0]:
         event = event - misc_range[0] + spec_range[1]
       event_compounds.append([event+compound_range[i][1]-compound_range[i][0] for i in range(4)])
       cur[1:4] = [-1, -1, -1]
   bar_pos.append(len(event_compounds))
-  if to_ndarr:
-    return bar_pos, np.array(event_compounds)
+  if bar_token_pos == None:
+    if to_ndarr:
+      return np.array(event_compounds)
+    else:
+      return event_compounds
   else:
-    return bar_pos, event_compounds
+    if to_ndarr:
+      return bar_pos, np.array(event_compounds)
+    else:
+      return bar_pos, event_compounds
 
 
 class REMIFullSongTransformerDataset(Dataset):

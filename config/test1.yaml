@@ -1,9 +1,9 @@
 data:
-    data_dir:         /content/drive/MyDrive/Dataset/remi_dataset
-    train_split:      /content/drive/MyDrive/Dataset/pickles/train_pieces.pkl
-    val_split:        /content/drive/MyDrive/Dataset/pickles/val_pieces.pkl
-    test_split:       /content/drive/MyDrive/Dataset/pickles/test_pieces.pkl
-    vocab_path:       /content/drive/MyDrive/Dataset/pickles/remi_vocab.pkl
+    data_dir:         /content/MuseMorphose_Final/Dataset/remi_dataset
+    train_split:      /content/MuseMorphose_Final/Dataset/pickles/train_pieces.pkl
+    val_split:        /content/MuseMorphose_Final/Dataset/pickles/val_pieces.pkl
+    test_split:       /content/MuseMorphose_Final/Dataset/pickles/test_pieces.pkl
+    vocab_path:       /content/MuseMorphose_Final/Dataset/pickles/remi_vocab.pkl
     max_bars:         16                 
     enc_seqlen:       128
     dec_seqlen:       1280               
@@ -20,8 +20,7 @@ model:
     dec_d_ff:         2048
     d_embed:          512
     d_latent:         128
-    d_polyph_emb:     64
-    d_rfreq_emb:      64
+    d_composer_emb:   128
     cond_mode:        in-attn
     pretrained_params_path:      null
     pretrained_optim_path:       null
@@ -41,7 +40,7 @@ training:
     kl_cycle_steps:   5000
     kl_max_beta:      1.0
     free_bit_lambda:  0.25
-    constant_kl:      Falgitse
+    constant_kl:      False
     ckpt_interval:    50
     log_interval:     10
     val_interval:     5000

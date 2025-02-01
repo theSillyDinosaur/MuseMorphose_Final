@@ -59,7 +59,8 @@ class MuseMorphose(nn.Module):
     n_composer_cls=13,
     is_training=True, use_attr_cls=True,
     cond_mode='in-attn',
-    compound=False
+    compound=False,
+    device="cuda"
   ):
     super(MuseMorphose, self).__init__()
     self.enc_n_layer = enc_n_layer
@@ -82,18 +83,14 @@ class MuseMorphose(nn.Module):
 
     self.cond_mode = cond_mode
     self.compound = compound
+    self.device = device
     if compound:
       assert d_embed % 4 == 0 and enc_d_model % 4 == 0 and dec_d_model % 4 == 0 and len(n_token) == 5
-      self.partial_embs = [TokenEmbedding(n_token[i]+n_token[4], d_embed//4, enc_d_model//4) for i in range(4)]
+      self.partial_embs = [TokenEmbedding(n_token[i]+n_token[4], d_embed//4, enc_d_model//4).to(device) for i in range(4)]
       def token_emb_func(inp_tokens):
-        a = []
-        a.append(self.partial_embs[0](inp_tokens[..., 0]))
-        a.append(self.partial_embs[1](inp_tokens[..., 1]))
-        a.append(self.partial_embs[2](inp_tokens[..., 2]))
-        a.append(self.partial_embs[3](inp_tokens[..., 3]))
         return torch.cat([self.partial_embs[i](inp_tokens[..., i]) for i in range(4)], dim=-1)
       self.token_emb = token_emb_func
-      self.partial_out_proj = [nn.Linear(dec_d_model // 4, n_token[i]+n_token[4]) for i in range(4)]
+      self.partial_out_proj = [nn.Linear(dec_d_model // 4, n_token[i]+n_token[4]).to(device) for i in range(4)]
       def dec_out_proj_func(latent):
         split_latent = torch.split(latent, dec_d_model // 4, dim=-1)
         dec_logits = [self.partial_out_proj[i](split_latent[i]) for i in range(4)]
@@ -131,6 +128,7 @@ class MuseMorphose(nn.Module):
 
     self.emb_dropout = nn.Dropout(self.enc_dropout)
     self.apply(weights_init)
+    self.to(device)
     
 
   def reparameterize(self, mu, logvar, use_sampling=True, sampling_var=1.):

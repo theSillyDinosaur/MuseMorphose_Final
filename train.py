@@ -202,15 +202,28 @@ def validate(model, dloader, n_rounds=8, use_attr_cls=True):
       for batch_idx, batch_samples in enumerate(dloader):
         model.zero_grad()
 
-        batch_enc_inp = batch_samples['enc_input'].permute(2, 0, 1).to(device)
-        batch_dec_inp = batch_samples['dec_input'].permute(1, 0).to(device)
-        batch_dec_tgt = batch_samples['dec_target'].permute(1, 0).to(device)
-        batch_inp_bar_pos = batch_samples['bar_pos'].to(device)
-        batch_padding_mask = batch_samples['enc_padding_mask'].to(device)
-        if use_attr_cls:
-          batch_composer_cls = batch_samples['composer_cls'].permute(1, 0).to(device)
+        if model.compound:
+          batch_enc_inp = batch_samples['enc_input'].permute(2, 0, 1, 3).to(device)
+          batch_dec_inp = batch_samples['dec_input'].permute(1, 0, 2).to(device)
+          batch_dec_tgt = batch_samples['dec_target'].permute(1, 0, 2).to(device)
+          batch_inp_bar_pos = batch_samples['bar_pos'].to(device)
+          batch_inp_lens = batch_samples['length']
+          batch_padding_mask = batch_samples['enc_padding_mask'].to(device)
+          if model.use_attr_cls:
+            batch_composer_cls = batch_samples['composer_cls'].permute(1, 0, 2).to(device)
+          else:
+            batch_composer_cls = None
         else:
-          batch_composer_cls = None
+          batch_enc_inp = batch_samples['enc_input'].permute(2, 0, 1).to(device)
+          batch_dec_inp = batch_samples['dec_input'].permute(1, 0).to(device)
+          batch_dec_tgt = batch_samples['dec_target'].permute(1, 0).to(device)
+          batch_inp_bar_pos = batch_samples['bar_pos'].to(device)
+          batch_inp_lens = batch_samples['length']
+          batch_padding_mask = batch_samples['enc_padding_mask'].to(device)
+          if model.use_attr_cls:
+            batch_composer_cls = batch_samples['composer_cls'].permute(1, 0).to(device)
+          else:
+            batch_composer_cls = None
 
         mu, logvar, dec_logits = model(
           batch_enc_inp, batch_dec_inp, 
@@ -254,8 +267,8 @@ if __name__ == "__main__":
   )
   print ('[info]', '# training samples:', len(dset.pieces))
 
-  dloader = DataLoader(dset, batch_size=config['data']['batch_size'], shuffle=True, num_workers=1)
-  dloader_val = DataLoader(dset_val, batch_size=config['data']['batch_size'], shuffle=True, num_workers=1)
+  dloader = DataLoader(dset, batch_size=config['data']['batch_size'], shuffle=True, num_workers=8)
+  dloader_val = DataLoader(dset_val, batch_size=config['data']['batch_size'], shuffle=True, num_workers=8)
 
   mconf = config['model']
   model = MuseMorphose(
@@ -263,7 +276,8 @@ if __name__ == "__main__":
     mconf['dec_n_layer'], mconf['dec_n_head'], mconf['dec_d_model'], mconf['dec_d_ff'],
     mconf['d_latent'], mconf['d_embed'], dset.vocab_size,
     d_composer_emb=mconf['d_composer_emb'],
-    cond_mode=mconf['cond_mode'], use_attr_cls=mconf['use_attr_cls'], compound=mconf['compound']
+    cond_mode=mconf['cond_mode'], use_attr_cls=mconf['use_attr_cls'], compound=mconf['compound'],
+    device = device
   ).to(device)
   if pretrained_params_path:
     model.load_state_dict( torch.load(pretrained_params_path) )
