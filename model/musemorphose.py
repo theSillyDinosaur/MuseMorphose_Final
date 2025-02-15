@@ -229,16 +229,11 @@ class MuseMorphose(nn.Module):
         first_logits.view(-1, first_logits.size(-1)), dec_tgt[..., 0].contiguous().view(-1), 
         ignore_index=0, reduction='mean'
       ).float()
-
-      for i in range(4):
-        print(torch.max((dec_tgt[..., 0]==i).reshape(-1, 1) * dec_tgt.reshape(-1, 4), dim=0))
-
       seq_recons = [[F.cross_entropy(
         seq_logits[i][j].view(-1, seq_logits[i][j].size(-1)),
         ((dec_tgt[..., 0] == i+1)*(dec_tgt[..., j+1])).contiguous().view(-1), 
         ignore_index=0, reduction='mean'
       ).float() for j in range(3)] for i in range(len(self.n_token))]
-      print(first_recons, seq_recons)
       recons_loss = first_recons
       for i in seq_recons:
         for j in i:
