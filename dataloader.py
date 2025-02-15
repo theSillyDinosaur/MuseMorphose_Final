@@ -7,14 +7,7 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import copy
 
-# Need to be reset for general REMI!
-spec_range = [0, 4]
-pitch_range = [4, 92]
-vel_range = [92, 116]
-dur_range = [116, 164]
-pos_range = [164, 452]
-misc_range = [452, 600]
-compound_range = [pos_range, pitch_range, vel_range, dur_range]
+expect_type_list = ["Pitch", "Velocity", "Duration", "Position", "Chord", "Tempo", "TimeSig", "Rest", "Bar"]
 
 def transpose_events(raw_events, n_keys):
   transposed_raw_events = []
@@ -51,44 +44,107 @@ def convert_event(event_seq, event2idx, to_ndarr=True):
     return np.array(event_seq)
   else:
     return event_seq
+  
+def decompound_event(event_compounds, type_range):
+  event_seq = []
+  def in_range(i, name):
+    return (type_range[name][0] <= i) and (type_range[name][1] > i)
+  for event in event_compounds:
+    if event[0] == 1:
+      if event[1] == 0:
+        continue
+      assert event[1] == 1 or event[1] == 2
+      if event[1] == 2:
+        event_seq.append(type_range["Bar"][0])
+      if in_range(event[2]-2+type_range["TimeSig"][0], "TimeSig"):
+        event_seq.append(event[2]-2+type_range["TimeSig"][0])
+      elif in_range(event[2]-2+type_range["TimeSig"][0]-type_range["TimeSig"][1]+type_range["Rest"][0], "Rest"):
+        event_seq.append(event[2]-2+type_range["TimeSig"][0]-type_range["TimeSig"][1]+type_range["Rest"][0])
+      else:
+        assert event[1] == 2
+    elif event[0] == 2:
+      assert in_range(event[1]-1+type_range["Pitch"][0], "Pitch")
+      assert in_range(event[2]-1+type_range["Velocity"][0], "Velocity")
+      assert in_range(event[3]-1+type_range["Duration"][0], "Duration")
+      event_seq = event_seq + [
+        event[1]-1+type_range["Pitch"][0],
+        event[2]-1+type_range["Velocity"][0],
+        event[3]-1+type_range["Duration"][0]
+      ]
+    elif event[0] == 3:
+      if event[1] != 0:
+        assert in_range(event[1]-1+type_range["Position"][0], "Position")
+        event_seq.append(event[1]-1+type_range["Position"][0])
+      if event[2] != 0:
+        assert in_range(event[2]-1+type_range["Chord"][0], "Chord")
+        event_seq.append(event[2]-1+type_range["Chord"][0])
+      if event[3] != 0:
+        assert in_range(event[3]-1+type_range["Tempo"][0], "Tempo")
+        event_seq.append(event[3]-1+type_range["Tempo"][0])
+    else:
+      assert event[0] == 0
+  return event_seq
 
-def compound_event(event_seq, bar_token_pos, to_ndarr = True):
-  cur = [-1, -1, -1, -1]
+      
+
+def compound_event(event_seq, type_range, need_bar_pos = False, to_ndarr = True):
+  cur = [-1, 0, 0, 0]
   bar_pos = []
-
-  event_compounds = []
-  for i, event in enumerate(event_seq):
-    if event >= pitch_range[0] and event < pos_range[1]:
-      if event >= pos_range[0] and event < pos_range[1]:
-        cur[0] = event-pos_range[0]
-        cur[1:4] = [-1, -1, -1]
-      elif event >= pitch_range[0] and event < pitch_range[1]:
-        cur[1] = event-pitch_range[0]
-      elif event >= vel_range[0] and event < vel_range[1]:
-        cur[2] = event-vel_range[0]
-      elif event >= dur_range[0] and event < dur_range[1]:
-        cur[3] = event-dur_range[0]
-      if cur[0] != -1 and cur[1] != -1 and cur[2] != -1 and cur[3] != -1:
-        event_compounds.append(copy.deepcopy(cur))
-        cur[1:4] = [-1, -1, -1]
-    else:
-      if bar_token_pos != None and i in bar_token_pos:
-        bar_pos.append(len(event_compounds))
-      if event >= misc_range[0]:
-        event = event - misc_range[0] + spec_range[1]
-      event_compounds.append([event+compound_range[i][1]-compound_range[i][0] for i in range(4)])
-      cur[1:4] = [-1, -1, -1]
-  bar_pos.append(len(event_compounds))
-  if bar_token_pos == None:
-    if to_ndarr:
-      return np.array(event_compounds)
-    else:
-      return event_compounds
+  event_compound = []
+  def reset_cur_or_save(cur, event_compound):
+    if cur[0] != -1:
+      event_compound.append(cur.copy())
+    return [-1, 0, 0, 0]
+  def in_range(i, name):
+    return (type_range[name][0] <= i) and (type_range[name][1] > i)
+  for event in event_seq:
+    if in_range(event, "Pitch"):
+      cur = reset_cur_or_save(cur, event_compound)
+      cur[0] = 2
+      cur[1] = event - type_range["Pitch"][0] + 1
+    elif in_range(event, "Velocity"):
+      assert cur[0] == 2 and cur[2] == 0
+      cur[2] = event - type_range["Velocity"][0] + 1
+    elif in_range(event, "Duration"):
+      assert cur[0] == 2 and cur[3] == 0
+      cur[3] = event - type_range["Duration"][0] + 1
+      cur = reset_cur_or_save(cur, event_compound)
+    elif in_range(event, "Position"):
+      if cur[1] != 0 or cur[0] != 3:
+        cur = reset_cur_or_save(cur, event_compound)
+        cur[0] = 3
+      cur[1] = event - type_range["Position"][0] + 1
+    elif in_range(event, "Chord"):
+      if cur[2] != 0 or cur[0] != 3:
+        cur = reset_cur_or_save(cur, event_compound)
+        cur[0] = 3
+      cur[2] = event - type_range["Chord"][0] + 1
+    elif in_range(event, "Tempo"):
+      if cur[3] != 0 or cur[0] != 3:
+        cur = reset_cur_or_save(cur, event_compound)
+        cur[0] = 3
+      cur[3] = event - type_range["Tempo"][0] + 1
+    elif in_range(event, "Bar"):
+      cur = reset_cur_or_save(cur, event_compound)
+      cur = [1, 2, 1, 1]
+      bar_pos.append(len(event_compound))
+    elif in_range(event, "TimeSig"):
+      if cur[2] != 1 or cur[0] != 1:
+        cur = reset_cur_or_save(cur, event_compound)
+        cur[0] = 1
+      cur[2] = event - type_range["TimeSig"][0] + 2
+    elif in_range(event, "Rest"):
+      if cur[2] != 1 or cur[0] != 1:
+        cur = reset_cur_or_save(cur, event_compound)
+        cur[0], cur[1], cur[3] = 1, 1, 1
+      cur[2] = event - type_range["Rest"][0] + type_range["TimeSig"][1] - type_range["TimeSig"][0] + 2
+  cur = reset_cur_or_save(cur, event_compound)
+  if need_bar_pos:
+    return bar_pos, (np.ndarray(event_compound) if to_ndarr else event_compound)
   else:
-    if to_ndarr:
-      return bar_pos, np.array(event_compounds)
-    else:
-      return bar_pos, event_compounds
+    return (np.ndarray(event_compound) if to_ndarr else event_compound)
+
+
 
 
 class REMIFullSongTransformerDataset(Dataset):
@@ -306,13 +362,25 @@ class CPFullSongTransformerDataset(Dataset):
   def read_vocab(self):
     vocab = pickle_load(self.vocab_file)[0]
     self.idx2event = pickle_load(self.vocab_file)[1]
-    orig_vocab_size = len(vocab)
+    self.pad_token = [0, 0, 0, 0]
     self.event2idx = vocab
     self.bar_token = self.event2idx['Bar_None']
     self.eos_token = self.event2idx['EOS_None']
-    self.pad_token = orig_vocab_size
-    self.vocab_size = [compound_range[i][1]-compound_range[i][0] for i in range(4)] + \
-    [spec_range[1]-spec_range[0]+misc_range[1]-misc_range[0]+1]
+    self.type_range = {}
+    for v in expect_type_list:
+      self.type_range[v] = [10000, 0]
+    for k in vocab:
+      v = vocab[k]
+      if k.split("_")[0] in expect_type_list:
+        self.type_range[k.split("_")[0]][0] = min(self.type_range[k.split("_")[0]][0], v)
+        self.type_range[k.split("_")[0]][1] = max(self.type_range[k.split("_")[0]][1], v+1)
+    print(self.type_range)
+    def compute_range(name):
+      return self.type_range[name][1]-self.type_range[name][0]+1
+    self.vocab_size = [[compute_range("Bar")+1, compute_range("TimeSig")+compute_range("Rest")+1, 2],
+                       [compute_range("Pitch"), compute_range("Velocity"), compute_range("Duration")],
+                       [compute_range("Position"), compute_range("Chord"), compute_range("Tempo")]]
+      
   def build_dataset(self):
     if not self.pieces:
       self.pieces = sorted( glob(os.path.join(self.data_dir, '*.pkl')) )
@@ -360,12 +428,8 @@ class CPFullSongTransformerDataset(Dataset):
 
     return piece_evs, picked_st_bar, picked_bar_pos, n_bars
 
-  def pad_sequence(self, seq, maxlen, pad_value=None):
-    if pad_value is None:
-      pad_value = self.pad_token
-
-    seq.extend([[pad_value-misc_range[0]+spec_range[1]+compound_range[i][1]-compound_range[i][0] for i in range(4)] for _ in range(maxlen- len(seq))] )
-
+  def pad_sequence(self, seq, maxlen, pad_value=[0, 0, 0, 0]):
+    seq.extend([pad_value for _ in range(maxlen- len(seq))])
     return seq
 
   def pitch_augment(self, bar_events):
@@ -414,7 +478,7 @@ class CPFullSongTransformerDataset(Dataset):
     if self.do_augment:
       bar_events = self.pitch_augment(bar_events)
 
-    # TODO
+    # TODO: attr
     if self.use_attr_cls:
       composer_cls = self.get_attr_classes(os.path.basename(self.pieces[idx]), st_bar)
       composer_cls_expand = np.zeros((self.model_dec_seqlen,), dtype=int)
@@ -425,7 +489,7 @@ class CPFullSongTransformerDataset(Dataset):
       composer_cls_expand = [0]
 
     bar_tokens = convert_event(bar_events, self.event2idx, to_ndarr=False)
-    bar_pos, bar_compound = compound_event(bar_tokens, bar_token_pos, to_ndarr=False)
+    bar_pos, bar_compound = compound_event(bar_tokens, self.type_range, True, to_ndarr=False)
     bar_pos = bar_pos + [bar_pos[-1]]*(self.model_max_bars+1-len(bar_pos))
 
     enc_inp, enc_padding_mask, enc_lens = self.get_encoder_input_data(bar_pos, bar_compound)
@@ -467,9 +531,8 @@ if __name__ == "__main__":
     './remi_dataset', './pickles/remi_vocab.pkl', do_augment=True, use_attr_cls=True,
     model_max_bars=16, model_dec_seqlen=1280, model_enc_seqlen=128, min_pitch=22, max_pitch=107
   )
-  print (dset.bar_token, dset.pad_token, dset.vocab_size)
   print ('length:', len(dset))
-  print(dset[0])
+  a = dset[0]
   exit()
 
   # for i in random.sample(range(len(dset)), 100):

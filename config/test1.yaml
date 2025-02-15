@@ -1,9 +1,9 @@
 data:
-    data_dir:         /content/MuseMorphose_Final/Dataset/remi_dataset
-    train_split:      /content/MuseMorphose_Final/Dataset/pickles/train_pieces.pkl
-    val_split:        /content/MuseMorphose_Final/Dataset/pickles/val_pieces.pkl
-    test_split:       /content/MuseMorphose_Final/Dataset/pickles/test_pieces.pkl
-    vocab_path:       /content/MuseMorphose_Final/Dataset/pickles/remi_vocab.pkl
+    data_dir:         ./remi_dataset
+    train_split:      ./pickles/train_pieces.pkl
+    val_split:        ./pickles/val_pieces.pkl
+    test_split:       ./pickles/val_pieces.pkl
+    vocab_path:       ./pickles/remi_vocab.pkl
     max_bars:         16                 
     enc_seqlen:       128
     dec_seqlen:       1280               
@@ -12,13 +12,13 @@ data:
 model:
     enc_n_layer:      12
     enc_n_head:       8
-    enc_d_model:      512
+    enc_d_model:      64
     enc_d_ff:         2048
     dec_n_layer:      12
     dec_n_head:       8
-    dec_d_model:      512
+    dec_d_model:      64
     dec_d_ff:         2048
-    d_embed:          512
+    d_embed:          64
     d_latent:         128
     d_composer_emb:   128
     cond_mode:        in-attn
@@ -28,8 +28,8 @@ model:
     compound:                    True
 
 training:
-    device:           cuda
-    ckpt_dir:         /content/drive/MyDrive/test1/enc_dec_12L-16_bars-seqlen_1280
+    device:           cpu
+    ckpt_dir:         ./test1/enc_dec_12L-16_bars-seqlen_1280
     trained_steps:    0
     max_epochs:       1000
     max_lr:           1.0e-4

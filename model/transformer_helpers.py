@@ -76,14 +76,14 @@ class TokenEmbedding(nn.Module):
     self.d_proj = d_proj
     self.emb_scale = d_proj ** 0.5
 
-    self.emb_lookup = nn.Embedding(n_token, d_embed)
+    self.emb_lookup = nn.Embedding(n_token+1, d_embed)
     if d_proj != d_embed:
       self.emb_proj = nn.Linear(d_embed, d_proj, bias=False)
     else:
       self.emb_proj = None
 
   def forward(self, inp_tokens):
-    inp_emb = self.emb_lookup(inp_tokens)
+    inp_emb = self.emb_lookup(torch.clamp(inp_tokens, max=self.n_token).type(torch.int))
     
     if self.emb_proj is not None:
       inp_emb = self.emb_proj(inp_emb)

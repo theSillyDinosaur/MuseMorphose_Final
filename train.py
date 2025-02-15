@@ -277,7 +277,6 @@ if __name__ == "__main__":
     mconf['d_latent'], mconf['d_embed'], dset.vocab_size,
     d_composer_emb=mconf['d_composer_emb'],
     cond_mode=mconf['cond_mode'], use_attr_cls=mconf['use_attr_cls'], compound=mconf['compound'],
-    device = device
   ).to(device)
   if pretrained_params_path:
     model.load_state_dict( torch.load(pretrained_params_path) )

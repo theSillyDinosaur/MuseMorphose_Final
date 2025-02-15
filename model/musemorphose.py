@@ -60,8 +60,8 @@ class MuseMorphose(nn.Module):
     is_training=True, use_attr_cls=True,
     cond_mode='in-attn',
     compound=False,
-    device="cuda"
   ):
+    print(n_token)
     super(MuseMorphose, self).__init__()
     self.enc_n_layer = enc_n_layer
     self.enc_n_head = enc_n_head
@@ -83,18 +83,28 @@ class MuseMorphose(nn.Module):
 
     self.cond_mode = cond_mode
     self.compound = compound
-    self.device = device
     if compound:
-      assert d_embed % 4 == 0 and enc_d_model % 4 == 0 and dec_d_model % 4 == 0 and len(n_token) == 5
-      self.partial_embs = [TokenEmbedding(n_token[i]+n_token[4], d_embed//4, enc_d_model//4).to(device) for i in range(4)]
+      assert d_embed % 4 == 0 and enc_d_model % 4 == 0 and dec_d_model % 4 == 0
+      self.first_embs = TokenEmbedding(len(n_token)+1, d_embed//4, enc_d_model//4)
+      self.seq_embs = nn.ModuleList([nn.ModuleList([TokenEmbedding(n_token[i][j], d_embed//4, enc_d_model//4)
+                                                    for j in range(3)]) for i in range(len(n_token))])
       def token_emb_func(inp_tokens):
-        return torch.cat([self.partial_embs[i](inp_tokens[..., i]) for i in range(4)], dim=-1)
+        first_emb = self.first_embs(inp_tokens[..., 0])
+        seq_embs = [(inp_tokens[..., 0] == i).unsqueeze(-1)
+                    * torch.cat([self.seq_embs[i][j](inp_tokens[..., i]) for j in range(3)], dim=-1) for i in range(len(n_token))]
+        seq_emb = seq_embs[0]
+        for i in range(len(n_token)):
+          seq_emb += seq_embs[i]
+        return torch.cat([first_emb, seq_emb], dim=-1)
       self.token_emb = token_emb_func
-      self.partial_out_proj = [nn.Linear(dec_d_model // 4, n_token[i]+n_token[4]).to(device) for i in range(4)]
+      self.first_out_proj = nn.Linear(dec_d_model//4, len(n_token)+1)
+      self.seq_out_proj = nn.ModuleList([nn.ModuleList([nn.Linear(dec_d_model//4, n_token[i][j])
+                                                        for j in range(3)]) for i in range(len(n_token))])
       def dec_out_proj_func(latent):
         split_latent = torch.split(latent, dec_d_model // 4, dim=-1)
-        dec_logits = [self.partial_out_proj[i](split_latent[i]) for i in range(4)]
-        return dec_logits
+        first_logits = self.first_out_proj(split_latent[0])
+        seq_logits = [[self.seq_out_proj[i][j](split_latent[j+1]) for j in range(3)] for i in range(len(n_token))]
+        return first_logits, seq_logits
       self.dec_out_proj = dec_out_proj_func
         
     else:
@@ -128,7 +138,6 @@ class MuseMorphose(nn.Module):
 
     self.emb_dropout = nn.Dropout(self.enc_dropout)
     self.apply(weights_init)
-    self.to(device)
     
 
   def reparameterize(self, mu, logvar, use_sampling=True, sampling_var=1.):
@@ -164,7 +173,11 @@ class MuseMorphose(nn.Module):
     out = self.dec_out_proj(out)
 
     if keep_last_only:
-      out = out[-1, ...]
+      if self.compound:
+        for i in range(4):
+          out[i] = out[i][-1, ...]
+      else:
+        out = out[-1, ...]
 
     return out
 
@@ -211,13 +224,25 @@ class MuseMorphose(nn.Module):
 
   def compute_loss(self, mu, logvar, beta, fb_lambda, dec_logits, dec_tgt):
     if self.compound:
-      recons = [F.cross_entropy(
-        dec_logits[i].view(-1, dec_logits[i].size(-1)), dec_tgt[..., i].contiguous().view(-1), 
-        ignore_index=self.n_token[i] + self.n_token[4], reduction='mean'
-      ).float() for i in range(4)]
-      recons_loss = 0
-      for i in recons:
-        recons_loss += i
+      first_logits, seq_logits = dec_logits
+      first_recons = F.cross_entropy(
+        first_logits.view(-1, first_logits.size(-1)), dec_tgt[..., 0].contiguous().view(-1), 
+        ignore_index=0, reduction='mean'
+      ).float()
+
+      for i in range(4):
+        print(torch.max((dec_tgt[..., 0]==i).reshape(-1, 1) * dec_tgt.reshape(-1, 4), dim=0))
+
+      seq_recons = [[F.cross_entropy(
+        seq_logits[i][j].view(-1, seq_logits[i][j].size(-1)),
+        ((dec_tgt[..., 0] == i+1)*(dec_tgt[..., j+1])).contiguous().view(-1), 
+        ignore_index=0, reduction='mean'
+      ).float() for j in range(3)] for i in range(len(self.n_token))]
+      print(first_recons, seq_recons)
+      recons_loss = first_recons
+      for i in seq_recons:
+        for j in i:
+          recons_loss += torch.nan_to_num(j, nan=0)
     else:
       recons_loss = F.cross_entropy(
         dec_logits.view(-1, dec_logits.size(-1)), dec_tgt.contiguous().view(-1), 
